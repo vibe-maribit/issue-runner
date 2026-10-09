@@ -1,0 +1,15 @@
+# Environment and Secrets
+.env
+*.token
+*.key
+*.pem
+credentials.json
+
+# Docker & Runner Workspaces
+_work/
+runner-data/
+*.log
+
+# System & OS
+.DS_Store
+Thumbs.db

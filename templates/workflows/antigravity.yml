@@ -1,0 +1,108 @@
+name: Antigravity AI Issue Resolver (Google Pro)
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Istruzione per Antigravity"
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  antigravity-solve:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' &&
+        (contains(github.event.issue.body, '/agy') || contains(github.event.issue.body, '/antigravity'))) ||
+      (github.event_name != 'issues' &&
+        github.event.comment.user.login != 'github-actions[bot]' &&
+        (contains(github.event.comment.body, '/agy') || contains(github.event.comment.body, '/antigravity')))
+
+    runs-on: [self-hosted, antigravity]
+    timeout-minutes: 90
+
+    steps:
+      - name: Reagisci al comando (👀)
+        run: |
+          API="https://api.github.com/repos/${{ github.repository }}"
+          if [ -n "${{ github.event.comment.id }}" ]; then
+            RPATH="issues/comments/${{ github.event.comment.id }}/reactions"
+          elif [ -n "${{ github.event.issue.number }}" ]; then
+            RPATH="issues/${{ github.event.issue.number }}/reactions"
+          fi
+          if [ -n "$RPATH" ]; then
+            curl -s -X POST "$API/$RPATH" \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
+              -d '{"content":"eyes"}' > /dev/null || true
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Git
+        run: |
+          git config --global user.name "antigravity-bot"
+          git config --global user.email "bot@antigravity.local"
+          git remote set-url origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+
+      - name: Prepara Branch
+        id: branch
+        run: |
+          ISSUE_NUM="${{ github.event.issue.number || github.run_number }}"
+          BRANCH="agy/issue-${ISSUE_NUM}"
+          echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
+          git checkout -b "$BRANCH" || git checkout "$BRANCH"
+
+      - name: Esecuzione Antigravity CLI
+        run: |
+          PROMPT="Risolvi la richiesta: ${{ github.event.comment.body || github.event.issue.body || github.event.inputs.prompt }}
+          Titolo: ${{ github.event.issue.title }}
+          Dettagli completi:
+          ${{ github.event.issue.body }}
+          Esegui le modifiche al codice e valida i test se presenti."
+
+          agy --dangerously-skip-permissions --mode accept-edits -p "$PROMPT"
+
+      - name: Salva modifiche e Apri Pull Request
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "Nessuna modifica rilevata."
+            exit 0
+          fi
+          BRANCH="${{ steps.branch.outputs.name }}"
+          git add -A
+          git commit -m "fix(agy): risoluzione automatica per issue #${{ github.event.issue.number }}"
+          git push -u origin "$BRANCH" --force
+
+          gh pr create \
+            --title "🤖 [Antigravity] Fix Issue #${{ github.event.issue.number }}: ${{ github.event.issue.title }}" \
+            --body "Modifiche generate con successo tramite **Google Antigravity CLI** (Google Pro) sul runner locale self-hosted." \
+            --head "$BRANCH" \
+            --base "main" || echo "PR già presente."
+
+      - name: Segnala Completamento (🚀)
+        if: success()
+        run: |
+          API="https://api.github.com/repos/${{ github.repository }}"
+          if [ -n "${{ github.event.comment.id }}" ]; then
+            RPATH="issues/comments/${{ github.event.comment.id }}/reactions"
+          elif [ -n "${{ github.event.issue.number }}" ]; then
+            RPATH="issues/${{ github.event.issue.number }}/reactions"
+          fi
+          if [ -n "$RPATH" ]; then
+            curl -s -X POST "$API/$RPATH" \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
+              -d '{"content":"rocket"}' > /dev/null || true
+          fi

@@ -1,0 +1,44 @@
+FROM ubuntu:24.04
+
+LABEL maintainer="vibe-maribit"
+LABEL description="Universal AI Issue Runner for Gitea (Antigravity agy, Claude Code, OpenCode, Pi Agent)"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH="/root/.local/bin:/root/.opencode/bin:/usr/local/bin:${PATH}"
+
+# Dipendenze di sistema e strumenti di sviluppo
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    jq \
+    git \
+    sudo \
+    build-essential \
+    python3 \
+    python3-venv \
+    python3-pip \
+    ca-certificates \
+    gnupg \
+    tar \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Installazione Node.js 22 LTS
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Installazione Agent CLI (Claude Code, Pi Agent, OpenCode)
+RUN npm install -g @anthropic-ai/claude-code @earendil-works/pi-coding-agent
+RUN curl -fsSL https://opencode.ai/install | bash || true
+
+# Installazione act_runner
+ARG ACT_RUNNER_VERSION="0.2.11"
+RUN curl -o /usr/local/bin/act_runner -L https://gitea.com/gitea/act_runner/releases/download/v${ACT_RUNNER_VERSION}/act_runner-${ACT_RUNNER_VERSION}-linux-amd64 && \
+    chmod +x /usr/local/bin/act_runner
+
+WORKDIR /data
+
+COPY entrypoint-gitea.sh /entrypoint-gitea.sh
+RUN chmod +x /entrypoint-gitea.sh
+
+ENTRYPOINT ["/entrypoint-gitea.sh"]

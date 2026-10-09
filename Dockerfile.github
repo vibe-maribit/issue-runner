@@ -1,0 +1,66 @@
+FROM ubuntu:24.04
+
+LABEL maintainer="vibe-maribit"
+LABEL description="Universal AI Issue Runner for GitHub (Antigravity agy, Claude Code, OpenCode, Pi Agent, Codex)"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV RUNNER_MANUALLY_TRAP_SIG=1
+ENV ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT=1
+ENV PATH="/home/runner/.local/bin:/home/runner/.opencode/bin:/usr/local/bin:${PATH}"
+
+# 1. Installazione dipendenze di sistema e strumenti di sviluppo
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    jq \
+    git \
+    sudo \
+    libicu-dev \
+    build-essential \
+    python3 \
+    python3-venv \
+    python3-pip \
+    ca-certificates \
+    gnupg \
+    tar \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Installazione Node.js 22 LTS
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# 3. Installazione GitHub CLI (gh)
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && apt-get update && apt-get install -y gh && rm -rf /var/lib/apt/lists/*
+
+# 4. Installazione Agent CLI (Claude Code, Pi Agent, OpenCode)
+RUN npm install -g @anthropic-ai/claude-code @earendil-works/pi-coding-agent
+
+# Installazione OpenCode CLI
+RUN curl -fsSL https://opencode.ai/install | bash || true
+
+# 5. Creazione utente runner con UID/GID 1000 per perfetta compatibilità con i volumi host
+RUN groupadd -g 1000 runner && \
+    useradd -m -u 1000 -g runner -s /bin/bash runner && \
+    echo "runner ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# 6. Installazione GitHub Actions Runner
+WORKDIR /home/runner/actions-runner
+ARG RUNNER_VERSION="2.322.0"
+RUN curl -o actions-runner-linux-x64.tar.gz -L https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz && \
+    tar xzf ./actions-runner-linux-x64.tar.gz && \
+    rm actions-runner-linux-x64.tar.gz && \
+    ./bin/installdependencies.sh
+
+# Copia script entrypoint e diagnostica
+COPY entrypoint-github.sh /home/runner/actions-runner/entrypoint.sh
+COPY scripts/test-agents.sh /usr/local/bin/test-agents
+RUN chmod +x /home/runner/actions-runner/entrypoint.sh /usr/local/bin/test-agents && chown -R runner:runner /home/runner
+
+USER runner
+WORKDIR /home/runner/actions-runner
+
+ENTRYPOINT ["/home/runner/actions-runner/entrypoint.sh"]

@@ -1,0 +1,72 @@
+services:
+  github-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.github
+    container_name: vibe-github-ai-runner
+    restart: unless-stopped
+    environment:
+      - GITHUB_URL=${GITHUB_URL:-https://github.com/vibe-maribit/issue-runner}
+      - GITHUB_PAT=${GITHUB_PAT}
+      - RUNNER_TOKEN=${RUNNER_TOKEN}
+      - RUNNER_NAME=${GITHUB_RUNNER_NAME:-vibe-ai-runner-box}
+      - RUNNER_LABELS=${GITHUB_RUNNER_LABELS:-self-hosted,linux,x64,issue-runner,antigravity,agy,claude,opencode,pi-agent,codex}
+      - HOME=/home/runner
+    volumes:
+      # Binario e Sessione Google Pro Antigravity CLI (agy)
+      - /home/nicola/.local/bin/agy:/usr/local/bin/agy:ro
+      - /home/nicola/.gemini:/home/runner/.gemini:rw
+
+      # Sessione Claude Code
+      - /home/nicola/.claude:/home/runner/.claude:rw
+      - /home/nicola/.claude.json:/home/runner/.claude.json:rw
+
+      # Sessione OpenCode
+      - /home/nicola/.config/opencode:/home/runner/.config/opencode:rw
+      - /home/nicola/.opencode:/home/runner/.opencode:rw
+
+      # Sessione Pi Agent
+      - /home/nicola/.pi:/home/runner/.pi:rw
+
+      # Docker socket per job con container
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+
+      # Work directory persistente per velocizzare i checkout
+      - github-runner-work:/home/runner/actions-runner/_work
+    networks:
+      - runner-net
+    profiles: ["all", "github"]
+
+  gitea-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.gitea
+    container_name: vibe-gitea-ai-runner
+    restart: unless-stopped
+    environment:
+      - GITEA_INSTANCE_URL=${GITEA_INSTANCE_URL}
+      - GITEA_RUNNER_REGISTRATION_TOKEN=${GITEA_RUNNER_TOKEN}
+      - GITEA_RUNNER_NAME=${GITEA_RUNNER_NAME:-vibe-gitea-ai-runner}
+      - GITEA_RUNNER_LABELS=${GITEA_RUNNER_LABELS:-self-hosted:host,issue-runner:host,antigravity:host,agy:host,claude:host,opencode:host,pi-agent:host}
+      - HOME=/root
+    volumes:
+      - /home/nicola/.local/bin/agy:/usr/local/bin/agy:ro
+      - /home/nicola/.gemini:/root/.gemini:rw
+      - /home/nicola/.claude:/root/.claude:rw
+      - /home/nicola/.claude.json:/root/.claude.json:rw
+      - /home/nicola/.config/opencode:/root/.config/opencode:rw
+      - /home/nicola/.opencode:/root/.opencode:rw
+      - /home/nicola/.pi:/root/.pi:rw
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - gitea-runner-data:/data
+    networks:
+      - runner-net
+    profiles: ["all", "gitea"]
+
+volumes:
+  github-runner-work:
+  gitea-runner-data:
+
+networks:
+  runner-net:
+    driver: bridge

@@ -1,0 +1,107 @@
+name: OpenCode AI Issue Resolver
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Istruzione per OpenCode"
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  opencode-solve:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '/oc') || contains(github.event.issue.body, '/opencode'))) ||
+      (github.event_name != 'issues' &&
+        github.event.comment.user.login != 'github-actions[bot]' &&
+        (contains(github.event.comment.body, '/oc') || contains(github.event.comment.body, '/opencode')))
+
+    runs-on: [self-hosted, opencode]
+    timeout-minutes: 90
+
+    steps:
+      - name: Reagisci al comando (👀)
+        run: |
+          API="https://api.github.com/repos/${{ github.repository }}"
+          if [ -n "${{ github.event.comment.id }}" ]; then
+            RPATH="issues/comments/${{ github.event.comment.id }}/reactions"
+          elif [ -n "${{ github.event.issue.number }}" ]; then
+            RPATH="issues/${{ github.event.issue.number }}/reactions"
+          fi
+          if [ -n "$RPATH" ]; then
+            curl -s -X POST "$API/$RPATH" \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
+              -d '{"content":"eyes"}' > /dev/null || true
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Git
+        run: |
+          git config --global user.name "opencode-bot"
+          git config --global user.email "bot@opencode.local"
+          git remote set-url origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+
+      - name: Prepara Branch
+        id: branch
+        run: |
+          ISSUE_NUM="${{ github.event.issue.number || github.run_number }}"
+          BRANCH="opencode/issue-${ISSUE_NUM}"
+          echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
+          git checkout -b "$BRANCH" || git checkout "$BRANCH"
+
+      - name: Esecuzione OpenCode CLI
+        run: |
+          CLEAN_PROMPT=$(echo "${{ github.event.comment.body || github.event.issue.body || github.event.inputs.prompt }}" | sed -e 's/\/opencode//g' -e 's/\/oc//g')
+          PROMPT="Risolvi la richiesta: $CLEAN_PROMPT
+          Issue: ${{ github.event.issue.title }}
+          Dettagli:
+          ${{ github.event.issue.body }}"
+
+          opencode run "$PROMPT"
+
+      - name: Salva modifiche e Apri Pull Request
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "Nessuna modifica rilevata."
+            exit 0
+          fi
+          BRANCH="${{ steps.branch.outputs.name }}"
+          git add -A
+          git commit -m "fix(opencode): risoluzione automatica per issue #${{ github.event.issue.number }}"
+          git push -u origin "$BRANCH" --force
+
+          gh pr create \
+            --title "🤖 [OpenCode] Fix Issue #${{ github.event.issue.number }}: ${{ github.event.issue.title }}" \
+            --body "Modifiche generate con successo tramite **OpenCode CLI** sul runner locale." \
+            --head "$BRANCH" \
+            --base "main" || echo "PR già presente."
+
+      - name: Segnala Completamento (🚀)
+        if: success()
+        run: |
+          API="https://api.github.com/repos/${{ github.repository }}"
+          if [ -n "${{ github.event.comment.id }}" ]; then
+            RPATH="issues/comments/${{ github.event.comment.id }}/reactions"
+          elif [ -n "${{ github.event.issue.number }}" ]; then
+            RPATH="issues/${{ github.event.issue.number }}/reactions"
+          fi
+          if [ -n "$RPATH" ]; then
+            curl -s -X POST "$API/$RPATH" \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
+              -d '{"content":"rocket"}' > /dev/null || true
+          fi

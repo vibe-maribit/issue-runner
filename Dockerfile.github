@@ -42,9 +42,14 @@ RUN npm install -g @anthropic-ai/claude-code @earendil-works/pi-coding-agent
 # Installazione OpenCode CLI
 RUN curl -fsSL https://opencode.ai/install | bash || true
 
-# 5. Creazione utente runner con UID/GID 1000 per perfetta compatibilità con i volumi host
-RUN groupadd -g 1000 runner && \
-    useradd -m -u 1000 -g runner -s /bin/bash runner && \
+# 5. Configurazione utente runner con UID/GID 1000 per perfetta compatibilità con i volumi host
+RUN if id "ubuntu" &>/dev/null; then \
+        usermod -l runner -d /home/runner -m ubuntu && \
+        groupmod -n runner ubuntu; \
+    else \
+        groupadd -g 1000 runner && \
+        useradd -m -u 1000 -g runner -s /bin/bash runner; \
+    fi && \
     echo "runner ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # 6. Installazione GitHub Actions Runner
